@@ -234,6 +234,25 @@ final class AccountStore {
         return summary
     }
 
+    /// The chosen accounts with their secrets, in list order, ready for
+    /// `MigrationEncoder`. Empty while locked, and skips any account whose
+    /// secret couldn't be read. Read-only: exporting never changes the store.
+    func accountsForExport(ids: Set<UUID>) -> [ImportedAccount] {
+        guard gate.isUnlocked else { return [] }
+        return accounts.compactMap { account in
+            guard ids.contains(account.id),
+                  let secret = vault.cachedSecret(for: account.id) else { return nil }
+            return ImportedAccount(
+                issuer: account.issuer,
+                name: account.name,
+                secret: secret,
+                digits: account.digits,
+                algorithm: account.algorithm,
+                period: account.period
+            )
+        }
+    }
+
     func delete(_ account: Account) {
         try? vault.delete(id: account.id)
         accounts.removeAll { $0.id == account.id }

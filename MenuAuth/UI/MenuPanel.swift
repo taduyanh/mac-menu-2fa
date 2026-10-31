@@ -7,6 +7,7 @@ struct MenuPanel: View {
         case list
         case importing
         case settings
+        case exporting
     }
 
     @Environment(AccountStore.self) private var store
@@ -16,6 +17,13 @@ struct MenuPanel: View {
     @State private var route: Route = .list
     @State private var copiedAccountID: UUID?
     @State private var copyResetTask: Task<Void, Never>?
+    /// Natural height of the account rows. A bare `ScrollView` inside a
+    /// `MenuBarExtra` window has no intrinsic height and collapses to a sliver
+    /// (clipping rows mid-way), so the height is measured and set explicitly.
+    @State private var listContentHeight: CGFloat = 0
+
+    private static let maxListHeight: CGFloat = 520
+    private static let estimatedRowHeight: CGFloat = 66
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,9 +34,11 @@ struct MenuPanel: View {
                 ImportView(route: $route)
             case .settings:
                 SettingsView(route: $route)
+            case .exporting:
+                ExportView(route: $route)
             }
         }
-        .frame(width: 300)
+        .frame(width: 340)
         // The hinge the footprint design hangs on: the clock only runs while
         // this view is on screen.
         .onAppear {
@@ -81,8 +91,11 @@ struct MenuPanel: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    listContentHeight = $0
+                }
             }
-            .frame(maxHeight: 380)
+            .frame(height: listHeight)
             // Deliberately attached here rather than to the whole panel:
             // reading `clock.tick` creates a view dependency on it, so keeping
             // it inside the list branch means the import and settings screens
@@ -112,6 +125,13 @@ struct MenuPanel: View {
 
         Divider()
         footer
+    }
+
+    private var listHeight: CGFloat {
+        let measured = listContentHeight > 0
+            ? listContentHeight
+            : CGFloat(store.filteredAccounts.count) * Self.estimatedRowHeight + 12
+        return min(max(measured, 0), Self.maxListHeight)
     }
 
     private var searchField: some View {

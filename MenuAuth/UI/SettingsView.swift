@@ -148,11 +148,16 @@ struct SettingsView: View {
                         .fill(.red.opacity(0.10))
                 }
             } else {
-                Button("Remove All Accounts…", role: .destructive) {
-                    isConfirmingRemoveAll = true
+                HStack(spacing: 8) {
+                    Button("Export Accounts…") { route = .exporting }
+                        .controlSize(.small)
+                        .disabled(store.isEmpty)
+                    Button("Remove All Accounts…", role: .destructive) {
+                        isConfirmingRemoveAll = true
+                    }
+                    .controlSize(.small)
+                    .disabled(store.isEmpty)
                 }
-                .controlSize(.small)
-                .disabled(store.isEmpty)
             }
         }
     }
