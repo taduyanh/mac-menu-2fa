@@ -17,6 +17,9 @@ struct MenuPanel: View {
     @State private var route: Route = .list
     @State private var copiedAccountID: UUID?
     @State private var copyResetTask: Task<Void, Never>?
+    /// Drawn inline rather than as a system dialog, which would take focus
+    /// from the panel and dismiss it (see `SettingsView.dangerSection`).
+    @State private var pendingRemoval: Account?
     /// Natural height of the account rows. A bare `ScrollView` inside a
     /// `MenuBarExtra` window has no intrinsic height and collapses to a sliver
     /// (clipping rows mid-way), so the height is measured and set explicitly.
@@ -52,6 +55,7 @@ struct MenuPanel: View {
             route = importSession.isInProgress ? .importing : .list
             copyResetTask?.cancel()
             copiedAccountID = nil
+            pendingRemoval = nil
         }
         .onChange(of: settings.idleTimeout) { store.gate.idleTimeout = settings.idleTimeout }
     }
@@ -84,7 +88,7 @@ struct MenuPanel: View {
                         )
                         .contextMenu {
                             Button("Remove \(account.displayTitle)…", role: .destructive) {
-                                store.delete(account)
+                                pendingRemoval = account
                             }
                         }
                     }
@@ -123,15 +127,54 @@ struct MenuPanel: View {
                 .padding(8)
         }
 
+        if let account = pendingRemoval {
+            Divider()
+            removalConfirmation(for: account)
+        }
+
         Divider()
         footer
+    }
+
+    private func removalConfirmation(for account: Account) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Remove \(account.displayTitle)?")
+                .font(.system(size: 12, weight: .semibold))
+            Text("This deletes its secret from MenuAuth. Make sure you can still "
+                + "sign in another way.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button("Cancel") { pendingRemoval = nil }
+                    .controlSize(.small)
+                Button("Remove", role: .destructive) {
+                    Task {
+                        if await store.unlock() {
+                            store.delete(account)
+                        }
+                        pendingRemoval = nil
+                    }
+                }
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            }
+        }
+        .padding(10)
+        .background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.red.opacity(0.10))
+        }
+        .padding(8)
     }
 
     private var listHeight: CGFloat {
         let measured = listContentHeight > 0
             ? listContentHeight
             : CGFloat(store.filteredAccounts.count) * Self.estimatedRowHeight + 12
-        return min(max(measured, 0), Self.maxListHeight)
+        return min(measured, Self.maxListHeight)
     }
 
     private var searchField: some View {

@@ -7,8 +7,10 @@ struct ExportView: View {
     @Environment(AccountStore.self) private var store
 
     @State private var selection: Set<UUID> = []
-    /// One rendered QR per batch. Non-empty means the QR step is showing.
-    @State private var qrImages: [NSImage] = []
+    /// One export URL per batch. Non-empty means the QR step is showing. Only
+    /// the visible page is rendered to an image, so memory stays at one QR.
+    @State private var urls: [String] = []
+    @State private var qrImage: NSImage?
     @State private var skippedCount = 0
     @State private var page = 0
 
@@ -18,7 +20,7 @@ struct ExportView: View {
 
             if !store.gate.isUnlocked {
                 lockedNotice
-            } else if qrImages.isEmpty {
+            } else if urls.isEmpty {
                 selectionStep
             } else {
                 qrStep
@@ -37,7 +39,7 @@ struct ExportView: View {
     private var header: some View {
         HStack {
             Button {
-                if qrImages.isEmpty {
+                if urls.isEmpty {
                     route = .settings
                 } else {
                     clearQR()
@@ -173,28 +175,29 @@ struct ExportView: View {
 
     private var qrStep: some View {
         VStack(spacing: 10) {
-            Image(nsImage: qrImages[page])
-                .interpolation(.none)
-                .resizable()
-                .frame(width: 264, height: 264)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            if let qrImage {
+                // Natural size: the image is already a whole number of pixels
+                // per module, so scaling it again would blur the edges.
+                Image(nsImage: qrImage)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
 
-            if qrImages.count > 1 {
+            if urls.count > 1 {
                 HStack(spacing: 14) {
-                    Button { page -= 1 } label: { Image(systemName: "chevron.left") }
+                    Button { show(page - 1) } label: { Image(systemName: "chevron.left") }
                         .disabled(page == 0)
-                    Text("QR \(page + 1) of \(qrImages.count)")
+                    Text("QR \(page + 1) of \(urls.count)")
                         .font(.system(size: 12, weight: .medium))
                         .monospacedDigit()
-                    Button { page += 1 } label: { Image(systemName: "chevron.right") }
-                        .disabled(page == qrImages.count - 1)
+                    Button { show(page + 1) } label: { Image(systemName: "chevron.right") }
+                        .disabled(page == urls.count - 1)
                 }
                 .buttonStyle(.plain)
             }
 
             Text("On the new phone, in Google Authenticator: ⋯ → Transfer accounts → "
                 + "Import accounts → Scan QR code"
-                + (qrImages.count > 1 ? ", then scan each code in turn." : "."))
+                + (urls.count > 1 ? ", then scan each code in turn." : "."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -221,14 +224,19 @@ struct ExportView: View {
     private func generate() {
         let exported = store.accountsForExport(ids: selection)
         skippedCount = selection.count - exported.count
-        qrImages = MigrationEncoder.urls(for: exported)
-            .compactMap { QRCodeImage.make(from: $0) }
-        page = 0
+        urls = MigrationEncoder.urls(for: exported)
+        if !urls.isEmpty { show(0) }
         store.gate.noteActivity()
     }
 
+    private func show(_ newPage: Int) {
+        page = newPage
+        qrImage = QRCodeImage.make(from: urls[newPage])
+    }
+
     private func clearQR() {
-        qrImages = []
+        urls = []
+        qrImage = nil
         skippedCount = 0
         page = 0
     }

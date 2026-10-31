@@ -11,6 +11,8 @@ struct ImportView: View {
 
     @State private var scanner = CameraScanner()
     @State private var isChoosingFile = false
+    /// Stops a second commit starting while the first is waiting on Touch ID.
+    @State private var isCommitting = false
     /// Read once rather than from `body`: a TCC lookup on every re-render would
     /// be needless work, and the answer cannot change while the panel is open.
     @State private var hasScreenPermission = ScreenQRCapture.hasPermission
@@ -314,12 +316,22 @@ struct ImportView: View {
     }
 
     private func commit() {
-        guard session.isInProgress else { return }
-        let summary = store.importAccounts(session.accounts, skipped: session.skippedCount)
-        scanner.stop()
-        session.reset()
-        session.statusMessage = summary.description
-        route = .list
+        guard session.isInProgress, !isCommitting else { return }
+        isCommitting = true
+        Task {
+            defer { isCommitting = false }
+            // A no-op when already unlocked; otherwise the one prompt, which
+            // the vault then reuses for the write.
+            guard await store.unlock() else {
+                session.errorMessage = "Unlock to finish importing."
+                return
+            }
+            let summary = store.importAccounts(session.accounts, skipped: session.skippedCount)
+            scanner.stop()
+            session.reset()
+            session.statusMessage = summary.description
+            route = .list
+        }
     }
 }
 

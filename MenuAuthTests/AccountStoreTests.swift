@@ -13,7 +13,10 @@ private struct Harness {
     let directory: URL
     let service: String
 
-    init(service: String = "com.anhtd.MenuAuth.tests.store-\(UUID().uuidString)") {
+    init(
+        service: String = "com.anhtd.MenuAuth.tests.store-\(UUID().uuidString)",
+        enforcement: BiometricGate.Enforcement = .unavailable
+    ) {
         self.service = service
         directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("MenuAuthTests-\(UUID().uuidString)", isDirectory: true)
@@ -32,7 +35,7 @@ private struct Harness {
         store = AccountStore(
             metadata: metadata,
             vault: vault,
-            gate: BiometricGate(enforcement: .unavailable)
+            gate: BiometricGate(enforcement: enforcement)
         )
     }
 
@@ -531,5 +534,59 @@ struct AccountMetadataStoreTests {
         let attributes = try FileManager.default.attributesOfItem(atPath: store.fileURL.path)
         let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
         #expect(permissions.int16Value == 0o600)
+    }
+}
+
+@Suite("Writes require an unlocked gate", .serialized)
+@MainActor
+struct LockedWriteTests {
+    /// `.appEnforced` starts locked and never prompts until `unlock()` is called.
+    private func lockedHarness() -> Harness {
+        Harness(enforcement: .appEnforced)
+    }
+
+    @Test("Importing while locked writes nothing and loads no secrets")
+    func importWhileLockedIsRefused() {
+        let harness = lockedHarness()
+        defer { harness.tearDown() }
+
+        let summary = harness.store.importAccounts([
+            ImportedAccount(issuer: "Example", name: "alice", secret: aliceSecret),
+        ])
+
+        #expect(summary.failed == 1 && summary.added == 0)
+        #expect(harness.store.accounts.isEmpty)
+        #expect(!harness.vault.isOpen)
+        #expect(!FileManager.default.fileExists(atPath: harness.secretsFileURL.path))
+    }
+
+    @Test("Removing while locked leaves the account in place")
+    func deleteWhileLockedIsRefused() throws {
+        let harness = lockedHarness()
+        defer { harness.tearDown() }
+        let account = Account(issuer: "Example", name: "alice")
+        try harness.metadata.save([account])
+        harness.store.reload()
+
+        harness.store.delete(account)
+
+        #expect(harness.store.accounts == [account])
+        #expect(harness.store.loadErrorMessage != nil)
+    }
+
+    @Test("A failed write leaves the vault's in-memory secrets unchanged")
+    func failedStoreDoesNotPoisonCache() throws {
+        let service = "com.anhtd.MenuAuth.tests.vault-\(UUID().uuidString)"
+        let missingDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("MenuAuthTests-missing-\(UUID().uuidString)")
+        let vault = SecretVault(
+            service: service,
+            secretsFileURL: missingDirectory.appendingPathComponent("secrets.dat")
+        )
+        defer { try? vault.deleteAll() }
+
+        let id = UUID()
+        #expect(throws: (any Error).self) { try vault.store([id: aliceSecret]) }
+        #expect(vault.cachedSecret(for: id) == nil)
     }
 }

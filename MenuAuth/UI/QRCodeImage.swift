@@ -13,7 +13,7 @@ nonisolated enum QRCodeImage {
         guard let output = filter.outputImage else { return nil }
 
         let modules = output.extent.width
-        let scale = max(((side / (modules + quietZoneModules * 2))).rounded(.down), 1)
+        let scale = max((side / (modules + quietZoneModules * 2)).rounded(.down), 1)
         let scaled = output
             .samplingNearest()
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))

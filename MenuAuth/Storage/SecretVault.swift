@@ -39,7 +39,8 @@ final class SecretVault {
             usesDataProtectionKeychain: availability.usesDataProtectionKeychain
         )
         file = EncryptedSecretsFile(
-            fileURL: secretsFileURL ?? Self.defaultSecretsFileURL(service: service)
+            fileURL: secretsFileURL ?? AppSupportDirectory.url(for: service)
+                .appendingPathComponent("secrets.dat", isDirectory: false)
         )
         enforcement = if availability.supportsUserPresence {
             .keychainEnforced
@@ -48,21 +49,6 @@ final class SecretVault {
         } else {
             .unavailable
         }
-    }
-
-    static func defaultSecretsFileURL(service: String) -> URL {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-
-        let directory = support.appendingPathComponent(service, isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        return directory.appendingPathComponent("secrets.dat", isDirectory: false)
     }
 
     private var writeProtection: KeychainStore.Protection {
@@ -141,23 +127,24 @@ final class SecretVault {
 
     /// Stores several secrets in one pass, so an import writes the file once
     /// rather than once per account.
+    ///
+    /// The file is written first and the cache updated only once that
+    /// succeeds, so a failed write can't leave secrets in memory that the next
+    /// successful save would then persist.
     func store(_ secrets: [UUID: Data], context: LAContext? = nil) throws {
         let key = try ensureKey(context: context)
-        for (id, secret) in secrets {
-            cache[id] = secret
-        }
-        try file.save(cache, key: key)
+        let updated = cache.merging(secrets) { _, new in new }
+        try file.save(updated, key: key)
+        cache = updated
         isOpen = true
-    }
-
-    func store(secret: Data, for id: UUID, context: LAContext? = nil) throws {
-        try store([id: secret], context: context)
     }
 
     func delete(id: UUID) throws {
         let key = try ensureKey(context: nil)
-        cache.removeValue(forKey: id)
-        try file.save(cache, key: key)
+        var updated = cache
+        updated.removeValue(forKey: id)
+        try file.save(updated, key: key)
+        cache = updated
         try? keychain.delete(account: id.uuidString) // in case a legacy item lingers
     }
 

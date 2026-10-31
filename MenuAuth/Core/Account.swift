@@ -42,7 +42,9 @@ nonisolated struct Account: Identifiable, Codable, Hashable, Sendable {
     }
 
     /// Identity for de-duplicating re-imports of the same export.
-    var dedupeKey: String {
+    var dedupeKey: String { Self.dedupeKey(issuer: issuer, name: name) }
+
+    static func dedupeKey(issuer: String, name: String) -> String {
         "\(issuer.lowercased())\u{0}\(name.lowercased())"
     }
 
@@ -79,9 +81,7 @@ nonisolated struct ImportedAccount: Sendable, Hashable {
         self.period = period
     }
 
-    var dedupeKey: String {
-        "\(issuer.lowercased())\u{0}\(name.lowercased())"
-    }
+    var dedupeKey: String { Account.dedupeKey(issuer: issuer, name: name) }
 
     func account(id: UUID = UUID(), sortIndex: Int) -> Account {
         Account(

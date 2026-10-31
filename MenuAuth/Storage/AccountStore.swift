@@ -188,6 +188,13 @@ final class AccountStore {
     /// present rather than creating a second row for it.
     @discardableResult
     func importAccounts(_ imported: [ImportedAccount], skipped: Int = 0) -> ImportSummary {
+        // Writing opens the vault, which loads every secret into memory. Doing
+        // that while locked would leave them resident with no re-lock timer to
+        // clear them, so callers unlock first (one prompt, reused here).
+        guard gate.isUnlocked else {
+            loadErrorMessage = "Unlock MenuAuth to import accounts."
+            return ImportSummary(added: 0, updated: 0, skipped: skipped, failed: imported.count)
+        }
         var summary = ImportSummary(added: 0, updated: 0, skipped: skipped, failed: 0)
         var byKey = Dictionary(
             accounts.map { ($0.dedupeKey, $0) },
@@ -253,8 +260,21 @@ final class AccountStore {
         }
     }
 
+    /// Requires an unlocked gate, for the same reason as `importAccounts`. The
+    /// account stays listed if its secret could not be removed, so the user is
+    /// never shown it as gone while the secret is still on disk.
     func delete(_ account: Account) {
-        try? vault.delete(id: account.id)
+        guard gate.isUnlocked else {
+            loadErrorMessage = "Unlock MenuAuth to remove accounts."
+            return
+        }
+        do {
+            try vault.delete(id: account.id)
+        } catch {
+            loadErrorMessage = error.localizedDescription
+            return
+        }
+        loadErrorMessage = nil
         accounts.removeAll { $0.id == account.id }
         codes.removeValue(forKey: account.id)
         renderedCounters.removeValue(forKey: account.id)
@@ -276,12 +296,6 @@ final class AccountStore {
         codes.removeAll()
         renderedCounters.removeAll()
         unreadableAccountIDs.removeAll()
-        persist()
-    }
-
-    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        accounts.move(fromOffsets: source, toOffset: destination)
-        reindex()
         persist()
     }
 

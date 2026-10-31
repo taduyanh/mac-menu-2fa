@@ -24,28 +24,12 @@ nonisolated struct AccountMetadataStore: Sendable {
         self.fileURL = fileURL
     }
 
-    /// The default location inside the app's Application Support directory
-    /// (its sandbox container, when sandboxed).
-    ///
-    /// Non-throwing on purpose: the app must still launch and show its menu bar
-    /// item if the directory cannot be prepared. A failure here surfaces as a
-    /// load/save error in the panel instead of preventing startup.
     static func makeDefault(
         bundleIdentifier: String = Bundle.main.bundleIdentifier ?? "com.anhtd.MenuAuth"
     ) -> AccountMetadataStore {
-        let support = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-
-        let directory = support.appendingPathComponent(bundleIdentifier, isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        return AccountMetadataStore(
-            fileURL: directory.appendingPathComponent("accounts.json", isDirectory: false)
+        AccountMetadataStore(
+            fileURL: AppSupportDirectory.url(for: bundleIdentifier)
+                .appendingPathComponent("accounts.json", isDirectory: false)
         )
     }
 
@@ -71,10 +55,5 @@ nonisolated struct AccountMetadataStore: Sendable {
             [.posixPermissions: 0o600],
             ofItemAtPath: fileURL.path
         )
-    }
-
-    func deleteFile() throws {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        try FileManager.default.removeItem(at: fileURL)
     }
 }

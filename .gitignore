@@ -37,3 +37,7 @@ Package.resolved
 # Playgrounds
 timeline.xctimeline
 playground.xcworkspace
+
+# Editor swap files
+*.swp
+*.swo
