@@ -163,9 +163,11 @@ final class SecretVault {
         if let key { return key }
         let key = try loadOrCreateKey(context: context)
         // Anything already on disk must be preserved rather than overwritten by
-        // a cache that was never populated.
+        // a cache that was never populated. A failure here is deliberately not
+        // swallowed: if the file can't be decrypted, pressing on would seal an
+        // empty store over it and destroy every secret it still holds.
         if cache.isEmpty {
-            cache = (try? file.load(key: key)) ?? [:]
+            cache = try file.load(key: key)
         }
         self.key = key
         return key

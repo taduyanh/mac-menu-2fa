@@ -118,6 +118,32 @@ final class BiometricGate {
         }
     }
 
+    /// Asks for a *fresh* authentication, ignoring the open session.
+    ///
+    /// The unlocked session lasts minutes, so anyone who sits down at the Mac
+    /// inside that window could otherwise do anything it allows. Operations that
+    /// hand every secret to the outside world — export — call this first.
+    func confirmPresence(reason: String) async -> Bool {
+        guard enforcement != .unavailable else { return true }
+        let context = LAContext()
+        context.localizedCancelTitle = "Cancel"
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: reason
+            )
+            lastErrorMessage = success ? nil : "Authentication failed."
+            return success
+        } catch let error as LAError where error.code == .userCancel
+            || error.code == .appCancel || error.code == .systemCancel {
+            lastErrorMessage = nil
+            return false
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func lock() {
         relockTask?.cancel()
         relockTask = nil
@@ -164,7 +190,13 @@ final class BiometricGate {
         )
 
         let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
+        // Fast User Switching leaves this process running in the background
+        // with its secrets still decrypted, so a switch away is a lock too.
+        for name in [
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification,
+        ] {
             observers.append(
                 workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.lock() }

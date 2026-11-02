@@ -241,6 +241,17 @@ final class AccountStore {
         return summary
     }
 
+    /// How many of these would replace the secret of an account already stored.
+    ///
+    /// A QR code is untrusted input: one crafted with the same issuer and name
+    /// as a real account would, on import, swap that account's secret for the
+    /// attacker's and leave the user locked out of it. Callers use this to
+    /// refuse to import such a batch without an explicit confirmation.
+    func overwriteCount(for imported: [ImportedAccount]) -> Int {
+        let existing = Set(accounts.map(\.dedupeKey))
+        return imported.filter { existing.contains($0.dedupeKey) }.count
+    }
+
     /// The chosen accounts with their secrets, in list order, ready for
     /// `MigrationEncoder`. Empty while locked, and skips any account whose
     /// secret couldn't be read. Read-only: exporting never changes the store.

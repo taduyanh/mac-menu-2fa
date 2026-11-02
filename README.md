@@ -111,7 +111,34 @@ without ever prompting you. Both files sit in
 `~/Library/Application Support/com.anhtd.MenuAuth/`.
 
 Codes are hidden behind Touch ID, and copying one marks the clipboard entry
-`org.nspasteboard.ConcealedType` so clipboard managers skip it.
+`org.nspasteboard.ConcealedType` so clipboard managers skip it, keeps it off
+Universal Clipboard (`.currentHostOnly`), and clears it after 30 seconds if it
+is still the code MenuAuth put there.
+
+### Hardening
+
+- **Sandboxed, hardened runtime, no network entitlement** — the app cannot make
+  outbound connections. The Release build is signed *without*
+  `com.apple.security.get-task-allow` (`CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`),
+  so other processes cannot attach a debugger and read decrypted secrets from
+  memory. Check with `codesign -d --entitlements - MenuAuth.app`.
+- **QR codes are treated as untrusted input.** Every protobuf integer is
+  range-checked (an overflowing varint used to crash the app), input size,
+  secret length and account count are capped, and a damaged `accounts.json`
+  can't carry a `period` that crashes the code generator.
+- **A scanned QR can't silently replace an account.** If an import would
+  overwrite the secret of an account you already have, it no longer commits
+  itself — you get a warning and must press **Import**.
+- **Exporting needs a fresh Touch ID / password**, not just the open session.
+  Removing accounts (single or all) needs an unlocked session.
+- **Locks on** screen lock, sleep, display sleep, and Fast User Switching.
+- **A store that can't be decrypted is never overwritten** by a later write.
+
+Known limits: plaintext secrets are in memory while unlocked and are zeroed on
+lock on a best-effort basis (Swift can't guarantee there are no stray copies),
+and an ad-hoc build only has the app-enforced gate described below. The
+"Never" idle-lock option keeps secrets decrypted until you quit — pick a finite
+timeout if that matters to you.
 
 ### Why one Keychain item and not one per account
 

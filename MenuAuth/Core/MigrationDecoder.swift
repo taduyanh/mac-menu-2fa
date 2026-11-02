@@ -24,6 +24,15 @@ nonisolated enum MigrationDecoder {
     /// hardcoded to 30-second steps, so every imported account uses that.
     private static let googleAuthenticatorPeriod = 30
 
+    /// Bounds on untrusted input. A QR code holds under 3 KB and a real export
+    /// fragment well under that, so these are generous for genuine data while
+    /// stopping a hostile clipboard string or crafted payload from making the
+    /// decoder allocate without limit.
+    static let maximumInputLength = 16_384
+    static let maximumAccountsPerPayload = KeychainStore.maximumAccounts
+    static let maximumSecretLength = 1_024
+    static let maximumBatchSize = 255
+
     static func canDecode(_ text: String) -> Bool {
         text.lowercased().hasPrefix(scheme + "://")
     }
@@ -47,6 +56,9 @@ nonisolated enum MigrationDecoder {
     static func extractDataParameter(from text: String) throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canDecode(trimmed) else { throw ImportError.notAMigrationURL }
+        guard trimmed.utf8.count <= maximumInputLength else {
+            throw ImportError.malformedDataParameter
+        }
         guard let queryStart = trimmed.firstIndex(of: "?") else {
             throw ImportError.missingDataParameter
         }
@@ -99,17 +111,23 @@ nonisolated enum MigrationDecoder {
             switch (field.number, field.wireType) {
             case (1, .lengthDelimited):
                 var entry = try reader.readMessage()
+                guard accounts.count + skipped < maximumAccountsPerPayload else {
+                    throw ImportError.malformedPayload
+                }
                 if let account = try decodeOTPParameters(&entry) {
                     accounts.append(account)
                 } else {
                     skipped += 1
                 }
+            // `Int(_:)` traps on overflow, and these come straight from a QR
+            // anyone can show to the camera, so every conversion is checked.
             case (3, .varint):
-                batchSize = Int(try reader.readVarint())
+                batchSize = try boundedInt(try reader.readVarint(), maximum: maximumBatchSize)
             case (4, .varint):
-                batchIndex = Int(try reader.readVarint())
+                batchIndex = try boundedInt(try reader.readVarint(), maximum: maximumBatchSize)
             case (5, .varint):
-                batchID = Int(try reader.readVarint())
+                // The id is only compared for equality; any 63-bit value is fine.
+                batchID = try boundedInt(try reader.readVarint(), maximum: Int.max)
             default:
                 // Field 2 is `version`, plus anything a future release adds.
                 try reader.skip(field.wireType)
@@ -119,6 +137,8 @@ nonisolated enum MigrationDecoder {
         guard !accounts.isEmpty || skipped > 0 else {
             throw ImportError.noAccountsInPayload
         }
+        // A fragment claiming to be outside its own batch is not a real export.
+        guard batchIndex < max(batchSize, 1) else { throw ImportError.malformedPayload }
 
         return MigrationPayload(
             accounts: accounts,
@@ -157,7 +177,7 @@ nonisolated enum MigrationDecoder {
 
         // Type 0 is "unspecified"; Google's own decoder treats it as TOTP.
         guard typeValue == 0 || typeValue == 2 else { return nil }
-        guard !secret.isEmpty else { return nil }
+        guard !secret.isEmpty, secret.count <= maximumSecretLength else { return nil }
         guard let algorithm = OTPAlgorithm(migrationValue: algorithmValue) else { return nil }
 
         return ImportedAccount(
@@ -168,6 +188,11 @@ nonisolated enum MigrationDecoder {
             algorithm: algorithm,
             period: googleAuthenticatorPeriod
         )
+    }
+
+    private static func boundedInt(_ value: UInt64, maximum: Int) throws -> Int {
+        guard value <= UInt64(maximum) else { throw ImportError.malformedPayload }
+        return Int(value)
     }
 
     /// `digits` is a `DigitCount` enum, *not* the number of digits: 1 means six

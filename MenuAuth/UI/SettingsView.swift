@@ -133,9 +133,14 @@ struct SettingsView: View {
                         Button("Cancel") { isConfirmingRemoveAll = false }
                             .controlSize(.small)
                         Button("Remove All", role: .destructive) {
-                            store.deleteAll()
-                            isConfirmingRemoveAll = false
-                            route = .list
+                            // Same rule as removing a single account: no
+                            // destructive change without authenticating.
+                            Task {
+                                guard await store.unlock() else { return }
+                                store.deleteAll()
+                                isConfirmingRemoveAll = false
+                                route = .list
+                            }
                         }
                         .controlSize(.small)
                         .buttonStyle(.borderedProminent)

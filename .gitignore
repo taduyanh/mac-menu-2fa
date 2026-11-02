@@ -41,3 +41,17 @@ playground.xcworkspace
 # Editor swap files
 *.swp
 *.swo
+
+# Signing material and local secrets — never commit these
+*.p12
+*.pfx
+*.cer
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+secrets.dat
+accounts.json
+*.xcconfig.local

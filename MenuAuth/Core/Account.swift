@@ -30,6 +30,25 @@ nonisolated struct Account: Identifiable, Codable, Hashable, Sendable {
         self.sortIndex = sortIndex
     }
 
+    /// Decoding clamps `digits` and `period` to values the TOTP code can use.
+    ///
+    /// `accounts.json` is plain JSON on disk, so a damaged or edited file could
+    /// otherwise carry `period: 0` — which trips a precondition in `TOTP` and
+    /// would crash the app every time the panel opened.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        issuer = try container.decode(String.self, forKey: .issuer)
+        name = try container.decode(String.self, forKey: .name)
+        algorithm = try container.decode(OTPAlgorithm.self, forKey: .algorithm)
+        sortIndex = try container.decode(Int.self, forKey: .sortIndex)
+
+        let digits = try container.decode(Int.self, forKey: .digits)
+        self.digits = (6...8).contains(digits) ? digits : TOTP.defaultDigits
+        let period = try container.decode(Int.self, forKey: .period)
+        self.period = (1...300).contains(period) ? period : TOTP.defaultPeriod
+    }
+
     /// What the row shows on its first line. Some issuers only populate `name`.
     var displayTitle: String {
         issuer.isEmpty ? name : issuer

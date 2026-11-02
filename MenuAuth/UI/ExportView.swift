@@ -13,6 +13,7 @@ struct ExportView: View {
     @State private var qrImage: NSImage?
     @State private var skippedCount = 0
     @State private var page = 0
+    @State private var isAuthenticating = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -131,7 +132,7 @@ struct ExportView: View {
                     }
                     .controlSize(.small)
                     .buttonStyle(.borderedProminent)
-                    .disabled(selection.isEmpty)
+                    .disabled(selection.isEmpty || isAuthenticating)
                 }
             }
             .padding(12)
@@ -221,12 +222,23 @@ struct ExportView: View {
 
     // MARK: - Actions
 
+    /// Revealing every secret needs a fresh authentication, not just the
+    /// session that happens to be open — see `BiometricGate.confirmPresence`.
     private func generate() {
-        let exported = store.accountsForExport(ids: selection)
-        skippedCount = selection.count - exported.count
-        urls = MigrationEncoder.urls(for: exported)
-        if !urls.isEmpty { show(0) }
-        store.gate.noteActivity()
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        Task {
+            defer { isAuthenticating = false }
+            guard await store.gate.confirmPresence(
+                reason: "export your accounts as QR codes"
+            ) else { return }
+
+            let exported = store.accountsForExport(ids: selection)
+            skippedCount = selection.count - exported.count
+            urls = MigrationEncoder.urls(for: exported)
+            if !urls.isEmpty { show(0) }
+            store.gate.noteActivity()
+        }
     }
 
     private func show(_ newPage: Int) {

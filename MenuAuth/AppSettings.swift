@@ -20,8 +20,11 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        // `UserDefaults` is a plist anyone can edit, and a negative or absurd
+        // value would silently disable re-locking, so only offered choices are
+        // honoured.
         let stored = defaults.object(forKey: Key.idleTimeout) as? Double
-        idleTimeout = stored ?? 300
+        idleTimeout = stored.flatMap { Self.idleTimeoutChoices.contains($0) ? $0 : nil } ?? 300
     }
 
     static func describeTimeout(_ seconds: TimeInterval) -> String {

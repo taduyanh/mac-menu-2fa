@@ -233,6 +233,19 @@ struct ImportView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+
+        let overwrites = store.overwriteCount(for: session.accounts)
+        if overwrites > 0 {
+            Label(
+                "\(overwrites) of these already exist and importing will replace "
+                    + "\(overwrites == 1 ? "its" : "their") secret. Only continue if you "
+                    + "scanned this code from your own phone.",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var actions: some View {
@@ -312,7 +325,11 @@ struct ImportView: View {
 
     private func absorb(_ payload: String) {
         // A complete export commits itself; a partial one waits for the rest.
-        if session.accept(payload) { commit() }
+        // Unless it would replace an account that already exists: a QR is
+        // untrusted, so overwriting a secret needs a deliberate click.
+        if session.accept(payload), store.overwriteCount(for: session.accounts) == 0 {
+            commit()
+        }
     }
 
     private func commit() {

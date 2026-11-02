@@ -19,6 +19,12 @@ nonisolated enum AppSupportDirectory {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        // `createDirectory` leaves an existing folder as it found it, so
+        // tighten one that was made earlier (or by an older build) too.
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
         return directory
     }
 }

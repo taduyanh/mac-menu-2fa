@@ -23,6 +23,8 @@ nonisolated enum ImageQRDecoder {
         }
     }
 
+    static let maximumFileSize = 25 * 1_024 * 1_024
+
     /// Returns every QR payload in the image.
     ///
     /// All of them, not just the first: a photo of a phone screen can catch a
@@ -74,7 +76,13 @@ nonisolated enum ImageQRDecoder {
         let needsScope = url.startAccessingSecurityScopedResource()
         defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
 
-        guard let data = try? Data(contentsOf: url) else {
+        // A screenshot or photo of a QR is a few megabytes at most. Refusing
+        // anything far larger keeps a dropped file from being read into memory
+        // whole, whatever it claims to be.
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        guard size <= maximumFileSize,
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe)
+        else {
             throw Failure.unreadableImage
         }
         return try payloads(in: data)

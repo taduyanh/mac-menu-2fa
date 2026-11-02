@@ -15,6 +15,9 @@ nonisolated enum OTPAuthURL {
 
     static func decode(_ text: String) throws -> ImportedAccount {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.utf8.count <= MigrationDecoder.maximumInputLength else {
+            throw ImportError.unrecognizedQRCode
+        }
         guard let components = URLComponents(string: trimmed),
               components.scheme?.lowercased() == scheme
         else {
@@ -37,7 +40,9 @@ nonisolated enum OTPAuthURL {
         guard let rawSecret = value("secret"), !rawSecret.isEmpty else {
             throw ImportError.missingSecret
         }
-        guard let secret = Base32.decode(rawSecret) else {
+        guard let secret = Base32.decode(rawSecret),
+              secret.count <= MigrationDecoder.maximumSecretLength
+        else {
             throw ImportError.invalidSecretEncoding
         }
 
